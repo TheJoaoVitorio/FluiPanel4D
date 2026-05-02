@@ -1,7 +1,7 @@
 # FluiPanel4D
 
 <p align="center">
-  <img src="assets/logo.png" alt="FluiPanel4D" width="200">
+  <img src="https://github.com/TheJoaoVitorio/FluiToast4D/blob/master/assets/FLUI-logo.png" alt="FluiPanel4D" width="400">
 </p>
 
 O **FluiPanel4D** é um componente de painel arredondado de alta qualidade para Delphi (VCL), desenvolvido para trazer um visual moderno e refinado às suas aplicações. Utilizando GDI+ para renderização de alta precisão e *Window Regions* para clipping real de conteúdo, ele entrega um acabamento profissional comparável aos componentes premium do mercado, como o CurvyPanel da TMS.
