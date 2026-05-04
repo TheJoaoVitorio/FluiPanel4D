@@ -26,6 +26,28 @@ type
     FBorderGradientColorEnd: TColor;
     FCorners: TFluiCorners;
 
+    // Drop Shadow
+    FDropShadowEnabled: Boolean;
+    FDropShadowColor: TColor;
+    FDropShadowBlur: Integer;
+    FDropShadowOffsetX: Integer;
+    FDropShadowOffsetY: Integer;
+    FDropShadowAlpha: Byte;
+
+    // Inner Shadow
+    FInnerShadowEnabled: Boolean;
+    FInnerShadowColor: TColor;
+    FInnerShadowBlur: Integer;
+    FInnerShadowOffsetX: Integer;
+    FInnerShadowOffsetY: Integer;
+    FInnerShadowAlpha: Byte;
+
+    // Glass Effect
+    FGlassEnabled: Boolean;
+    FGlassBlurRadius: Integer;
+    FGlassColor: TColor;
+    FGlassAlpha: Byte;
+
     procedure SetRounding(const Value: Integer);
     procedure SetBorderColor(const Value: TColor);
     procedure SetBorderWidth(const Value: Single);
@@ -38,15 +60,34 @@ type
     procedure SetBorderGradientColorEnd(const Value: TColor);
     procedure SetCorners(const Value: TFluiCorners);
 
+    procedure SetDropShadowEnabled(const Value: Boolean);
+    procedure SetDropShadowColor(const Value: TColor);
+    procedure SetDropShadowBlur(const Value: Integer);
+    procedure SetDropShadowOffsetX(const Value: Integer);
+    procedure SetDropShadowOffsetY(const Value: Integer);
+    procedure SetDropShadowAlpha(const Value: Byte);
+
+    procedure SetInnerShadowEnabled(const Value: Boolean);
+    procedure SetInnerShadowColor(const Value: TColor);
+    procedure SetInnerShadowBlur(const Value: Integer);
+    procedure SetInnerShadowOffsetX(const Value: Integer);
+    procedure SetInnerShadowOffsetY(const Value: Integer);
+    procedure SetInnerShadowAlpha(const Value: Byte);
+
+    procedure SetGlassEnabled(const Value: Boolean);
+    procedure SetGlassBlurRadius(const Value: Integer);
+    procedure SetGlassColor(const Value: TColor);
+    procedure SetGlassAlpha(const Value: Byte);
+
     function ColorToGPColor(AColor: TColor; AAlpha: Byte = 255): TGPColor;
-    procedure UpdateRegion;
     procedure BuildPath(APath: TGPGraphicsPath; ARect: TGPRectF; ARadius: Single);
+    procedure FastBlur(ABitmap: Vcl.Graphics.TBitmap; ARadius: Integer);
   protected
     procedure Paint; override;
     procedure Resize; override;
-    procedure CreateWnd; override;
     procedure CMTextChanged(var Message: TMessage); message CM_TEXTCHANGED;
     procedure WMEraseBkgnd(var Message: TWMEraseBkgnd); message WM_ERASEBKGND;
+    procedure AdjustClientRect(var Rect: TRect); override;
   public
     constructor Create(AOwner: TComponent); override;
   published
@@ -63,6 +104,28 @@ type
     property EnableBorderGradient: Boolean read FEnableBorderGradient write SetEnableBorderGradient default False;
     property BorderGradientColorStart: TColor read FBorderGradientColorStart write SetBorderGradientColorStart default clGray;
     property BorderGradientColorEnd: TColor read FBorderGradientColorEnd write SetBorderGradientColorEnd default clBlack;
+
+    // Drop Shadow Properties
+    property DropShadowEnabled: Boolean read FDropShadowEnabled write SetDropShadowEnabled default False;
+    property DropShadowColor: TColor read FDropShadowColor write SetDropShadowColor default clBlack;
+    property DropShadowBlur: Integer read FDropShadowBlur write SetDropShadowBlur default 10;
+    property DropShadowOffsetX: Integer read FDropShadowOffsetX write SetDropShadowOffsetX default 0;
+    property DropShadowOffsetY: Integer read FDropShadowOffsetY write SetDropShadowOffsetY default 5;
+    property DropShadowAlpha: Byte read FDropShadowAlpha write SetDropShadowAlpha default 150;
+
+    // Inner Shadow Properties
+    property InnerShadowEnabled: Boolean read FInnerShadowEnabled write SetInnerShadowEnabled default False;
+    property InnerShadowColor: TColor read FInnerShadowColor write SetInnerShadowColor default clBlack;
+    property InnerShadowBlur: Integer read FInnerShadowBlur write SetInnerShadowBlur default 5;
+    property InnerShadowOffsetX: Integer read FInnerShadowOffsetX write SetInnerShadowOffsetX default 0;
+    property InnerShadowOffsetY: Integer read FInnerShadowOffsetY write SetInnerShadowOffsetY default 2;
+    property InnerShadowAlpha: Byte read FInnerShadowAlpha write SetInnerShadowAlpha default 100;
+
+    // Glass Effect Properties
+    property GlassEnabled: Boolean read FGlassEnabled write SetGlassEnabled default False;
+    property GlassBlurRadius: Integer read FGlassBlurRadius write SetGlassBlurRadius default 10;
+    property GlassColor: TColor read FGlassColor write SetGlassColor default clWhite;
+    property GlassAlpha: Byte read FGlassAlpha write SetGlassAlpha default 50;
 
     property Align;
     property Alignment;
@@ -152,6 +215,28 @@ begin
   FBorderGradientColorStart := clGray;
   FBorderGradientColorEnd := clBlack;
 
+  // Drop Shadow Defaults
+  FDropShadowEnabled := False;
+  FDropShadowColor := clBlack;
+  FDropShadowBlur := 10;
+  FDropShadowOffsetX := 0;
+  FDropShadowOffsetY := 5;
+  FDropShadowAlpha := 150;
+
+  // Inner Shadow Defaults
+  FInnerShadowEnabled := False;
+  FInnerShadowColor := clBlack;
+  FInnerShadowBlur := 5;
+  FInnerShadowOffsetX := 0;
+  FInnerShadowOffsetY := 2;
+  FInnerShadowAlpha := 100;
+
+  // Glass Defaults
+  FGlassEnabled := False;
+  FGlassBlurRadius := 10;
+  FGlassColor := clWhite;
+  FGlassAlpha := 50;
+
   ControlStyle := ControlStyle + [csAcceptsControls];
   ControlStyle := ControlStyle - [csOpaque];
   
@@ -175,10 +260,19 @@ begin
   Result := MakeColor(AAlpha, GetRValue(LColorRGB), GetGValue(LColorRGB), GetBValue(LColorRGB));
 end;
 
-procedure TFluiPanel.CreateWnd;
+procedure TFluiPanel.AdjustClientRect(var Rect: TRect);
+var
+  LShadowPadding: Integer;
 begin
-  inherited;
-  UpdateRegion;
+  inherited AdjustClientRect(Rect);
+  if FDropShadowEnabled then
+  begin
+    LShadowPadding := FDropShadowBlur + 2; // Extra buffer
+    Rect.Left := Rect.Left + LShadowPadding + Abs(FDropShadowOffsetX);
+    Rect.Top := Rect.Top + LShadowPadding + Abs(FDropShadowOffsetY);
+    Rect.Right := Rect.Right - LShadowPadding - Abs(FDropShadowOffsetX);
+    Rect.Bottom := Rect.Bottom - LShadowPadding - Abs(FDropShadowOffsetY);
+  end;
 end;
 
 procedure TFluiPanel.BuildPath(APath: TGPGraphicsPath; ARect: TGPRectF; ARadius: Single);
@@ -222,47 +316,85 @@ begin
   APath.CloseFigure;
 end;
 
-procedure TFluiPanel.UpdateRegion;
-var
-  LPath: TGPGraphicsPath;
-  LRegion: TGPRegion;
-  LHandle: HRGN;
-  LGraphics: TGPGraphics;
-  LRound: Single;
-begin
-  if not HandleAllocated then Exit;
-
-  LRound := FRounding;
-  if LRound < 1 then
-  begin
-    SetWindowRgn(Handle, 0, True);
-    Exit;
+procedure TFluiPanel.FastBlur(ABitmap: Vcl.Graphics.TBitmap; ARadius: Integer);
+type
+  TRGBTriple = record
+    B, G, R: Byte;
   end;
-
-  LPath := TGPGraphicsPath.Create;
+  PRGBTriple = ^TRGBTriple;
+var
+  X, Y, I, J, K: Integer;
+  LRow: PRGBTriple;
+  LSumR, LSumG, LSumB: Integer;
+  LCount: Integer;
+  LTemp: Vcl.Graphics.TBitmap;
+begin
+  if ARadius < 1 then Exit;
+  
+  ABitmap.PixelFormat := pf24bit;
+  LTemp := Vcl.Graphics.TBitmap.Create;
   try
-    // We use a slightly larger path for the region to avoid clipping anti-aliased pixels
-    // but keep it close enough to clip children effectively.
-    BuildPath(LPath, MakeRect(-0.5, -0.5, Width + 1.0, Height + 1.0), LRound + 0.5);
-
-    LGraphics := TGPGraphics.Create(Handle);
-    try
-      LRegion := TGPRegion.Create(LPath);
-      try
-        LHandle := LRegion.GetHRGN(LGraphics);
-        if LHandle <> 0 then
+    LTemp.Assign(ABitmap);
+    
+    // Horizontal pass
+    for Y := 0 to ABitmap.Height - 1 do
+    begin
+      LRow := ABitmap.ScanLine[Y];
+      for X := 0 to ABitmap.Width - 1 do
+      begin
+        LSumR := 0; LSumG := 0; LSumB := 0; LCount := 0;
+        for I := -ARadius to ARadius do
         begin
-          if SetWindowRgn(Handle, LHandle, True) = 0 then
-            DeleteObject(LHandle);
+          K := X + I;
+          if (K >= 0) and (K < ABitmap.Width) then
+          begin
+            with PRGBTriple(PByte(LTemp.ScanLine[Y]) + K * 3)^ do
+            begin
+              LSumR := LSumR + R;
+              LSumG := LSumG + G;
+              LSumB := LSumB + B;
+            end;
+            Inc(LCount);
+          end;
         end;
-      finally
-        LRegion.Free;
+        LRow^.R := LSumR div LCount;
+        LRow^.G := LSumG div LCount;
+        LRow^.B := LSumB div LCount;
+        Inc(LRow);
       end;
-    finally
-      LGraphics.Free;
+    end;
+    
+    LTemp.Assign(ABitmap);
+    
+    // Vertical pass
+    for X := 0 to ABitmap.Width - 1 do
+    begin
+      for Y := 0 to ABitmap.Height - 1 do
+      begin
+        LSumR := 0; LSumG := 0; LSumB := 0; LCount := 0;
+        for I := -ARadius to ARadius do
+        begin
+          K := Y + I;
+          if (K >= 0) and (K < ABitmap.Height) then
+          begin
+            with PRGBTriple(PByte(LTemp.ScanLine[K]) + X * 3)^ do
+            begin
+              LSumR := LSumR + R;
+              LSumG := LSumG + G;
+              LSumB := LSumB + B;
+            end;
+            Inc(LCount);
+          end;
+        end;
+        LRow := ABitmap.ScanLine[Y];
+        Inc(LRow, X);
+        LRow^.R := LSumR div LCount;
+        LRow^.G := LSumG div LCount;
+        LRow^.B := LSumB div LCount;
+      end;
     end;
   finally
-    LPath.Free;
+    LTemp.Free;
   end;
 end;
 
@@ -282,20 +414,23 @@ end;
 procedure TFluiPanel.Paint;
 var
   LGraphics: TGPGraphics;
-  LPath: TGPGraphicsPath;
+  LPath, LShadowPath: TGPGraphicsPath;
   LBrush: TGPBrush;
   LBorderBrush: TGPBrush;
   LPen: TGPPen;
   LTextRect: TRect;
   LRound: Single;
-  LOffset: Single;
-  LRectF: TGPRectF;
+  LRectF, LInnerRect: TGPRectF;
   LGPMode: LinearGradientMode;
   LClientRect: TRect;
+  LShadowPadding: Integer;
+  I: Integer;
+  LAlphaStep: Double;
+  LBmp: Vcl.Graphics.TBitmap;
+  LGPBmp: TGPBitmap;
 begin
   if (Width <= 1) or (Height <= 1) then Exit;
 
-  // Ensure parent background is painted for smooth anti-aliased corners
   if ParentBackground and (Parent <> nil) then
   begin
     LClientRect := GetClientRect;
@@ -305,49 +440,137 @@ begin
   LGraphics := TGPGraphics.Create(Canvas.Handle);
   try
     LGraphics.SetSmoothingMode(SmoothingModeAntiAlias);
-    LGraphics.SetPixelOffsetMode(PixelOffsetModeHalf); // Better for aligned borders
+    LGraphics.SetPixelOffsetMode(PixelOffsetModeHalf);
+
+    LShadowPadding := 0;
+    if FDropShadowEnabled then
+      LShadowPadding := FDropShadowBlur + 2;
+
+    LInnerRect := MakeRect(LShadowPadding * 1.0, LShadowPadding * 1.0, 
+      (Width - LShadowPadding * 2) * 1.0, (Height - LShadowPadding * 2) * 1.0);
 
     LRound := FRounding;
-    if LRound * 2 > Width then LRound := Width / 2;
-    if LRound * 2 > Height then LRound := Height / 2;
+    if LRound * 2 > LInnerRect.Width then LRound := LInnerRect.Width / 2;
+    if LRound * 2 > LInnerRect.Height then LRound := LInnerRect.Height / 2;
 
-    LOffset := FBorderWidth / 2;
-    LRectF := MakeRect(0.0, 0.0, Width * 1.0, Height * 1.0);
+    // 1. Drop Shadow
+    if FDropShadowEnabled and (FDropShadowBlur > 0) then
+    begin
+      LAlphaStep := FDropShadowAlpha / FDropShadowBlur;
+      for I := FDropShadowBlur downto 1 do
+      begin
+        LShadowPath := TGPGraphicsPath.Create;
+        try
+          BuildPath(LShadowPath, MakeRect(
+            LInnerRect.X + FDropShadowOffsetX - I/2, 
+            LInnerRect.Y + FDropShadowOffsetY - I/2, 
+            LInnerRect.Width + I, 
+            LInnerRect.Height + I), LRound + I/2);
+          
+          LBrush := TGPSolidBrush.Create(ColorToGPColor(FDropShadowColor, Round(LAlphaStep)));
+          try
+            LGraphics.FillPath(LBrush, LShadowPath);
+          finally
+            LBrush.Free;
+          end;
+        finally
+          LShadowPath.Free;
+        end;
+      end;
+    end;
 
     LPath := TGPGraphicsPath.Create;
     try
-      if LRound > 0.1 then
-        BuildPath(LPath, MakeRect(LOffset, LOffset, Width - FBorderWidth, Height - FBorderWidth), LRound - LOffset)
-      else
-        LPath.AddRectangle(MakeRect(LOffset, LOffset, Width - FBorderWidth, Height - FBorderWidth));
+      BuildPath(LPath, LInnerRect, LRound);
 
       case FGradientDirection of
-        gdVertical: LGPMode := LinearGradientModeVertical;
         gdHorizontal: LGPMode := LinearGradientModeHorizontal;
+        gdVertical: LGPMode := LinearGradientModeVertical;
         gdForwardDiagonal: LGPMode := LinearGradientModeForwardDiagonal;
         gdBackwardDiagonal: LGPMode := LinearGradientModeBackwardDiagonal;
       else
         LGPMode := LinearGradientModeVertical;
       end;
 
-      // Background
-      if FEnableGradient then
-        LBrush := TGPLinearGradientBrush.Create(LRectF, ColorToGPColor(FGradientColorStart),
-          ColorToGPColor(FGradientColorEnd), LGPMode)
+      // 2. Glass Effect
+      if FGlassEnabled then
+      begin
+        LBmp := Vcl.Graphics.TBitmap.Create;
+        try
+          LBmp.SetSize(Width, Height);
+          // Capture parent background
+          BitBlt(LBmp.Canvas.Handle, 0, 0, Width, Height, Canvas.Handle, 0, 0, SRCCOPY);
+          FastBlur(LBmp, FGlassBlurRadius);
+          
+          LGPBmp := TGPBitmap.Create(LBmp.Handle, 0);
+          try
+            LGraphics.SetClip(LPath);
+            LGraphics.DrawImage(LGPBmp, 0, 0);
+            LGraphics.ResetClip;
+          finally
+            LGPBmp.Free;
+          end;
+          
+          // Glass Overlay
+          LBrush := TGPSolidBrush.Create(ColorToGPColor(FGlassColor, FGlassAlpha));
+          try
+            LGraphics.FillPath(LBrush, LPath);
+          finally
+            LBrush.Free;
+          end;
+        finally
+          LBmp.Free;
+        end;
+      end
       else
-        LBrush := TGPSolidBrush.Create(ColorToGPColor(Color));
+      begin
+        // 3. Normal Background
+        if FEnableGradient then
+          LBrush := TGPLinearGradientBrush.Create(LInnerRect, ColorToGPColor(FGradientColorStart),
+            ColorToGPColor(FGradientColorEnd), LGPMode)
+        else
+          LBrush := TGPSolidBrush.Create(ColorToGPColor(Color));
 
-      try
-        LGraphics.FillPath(LBrush, LPath);
-      finally
-        LBrush.Free;
+        try
+          LGraphics.FillPath(LBrush, LPath);
+        finally
+          LBrush.Free;
+        end;
       end;
 
-      // Border
+      // 4. Inner Shadow
+      if FInnerShadowEnabled and (FInnerShadowBlur > 0) then
+      begin
+        LGraphics.SetClip(LPath);
+        LAlphaStep := FInnerShadowAlpha / FInnerShadowBlur;
+        for I := FInnerShadowBlur downto 1 do
+        begin
+          LPen := TGPPen.Create(ColorToGPColor(FInnerShadowColor, Round(LAlphaStep)), I * 2);
+          try
+            LPen.SetLineJoin(LineJoinRound);
+            // Offset the inner shadow
+            LShadowPath := TGPGraphicsPath.Create;
+            try
+              BuildPath(LShadowPath, MakeRect(
+                LInnerRect.X + FInnerShadowOffsetX, 
+                LInnerRect.Y + FInnerShadowOffsetY, 
+                LInnerRect.Width, LInnerRect.Height), LRound);
+              LGraphics.DrawPath(LPen, LShadowPath);
+            finally
+              LShadowPath.Free;
+            end;
+          finally
+            LPen.Free;
+          end;
+        end;
+        LGraphics.ResetClip;
+      end;
+
+      // 5. Border
       if ((FBorderColor <> clNone) or FEnableBorderGradient) and (FBorderWidth > 0.1) then
       begin
         if FEnableBorderGradient then
-          LBorderBrush := TGPLinearGradientBrush.Create(LRectF, 
+          LBorderBrush := TGPLinearGradientBrush.Create(LInnerRect, 
             ColorToGPColor(FBorderGradientColorStart),
             ColorToGPColor(FBorderGradientColorEnd), LGPMode)
         else
@@ -367,12 +590,12 @@ begin
         end;
       end;
 
-      // Caption
+      // 6. Caption
       if Caption <> '' then
       begin
         Canvas.Brush.Style := bsClear;
         Canvas.Font.Assign(Font);
-        LTextRect := Rect(0, 0, Width, Height);
+        LTextRect := Rect(LShadowPadding, LShadowPadding, Width - LShadowPadding, Height - LShadowPadding);
         DrawText(Canvas.Handle, PChar(Caption), -1, LTextRect, 
           DT_CENTER or DT_VCENTER or DT_SINGLELINE);
       end;
@@ -387,7 +610,6 @@ end;
 procedure TFluiPanel.Resize;
 begin
   inherited;
-  UpdateRegion;
   Invalidate;
 end;
 
@@ -414,7 +636,6 @@ begin
   if FRounding <> Value then
   begin
     FRounding := Value;
-    UpdateRegion;
     Invalidate;
   end;
 end;
@@ -487,7 +708,154 @@ begin
   if FCorners <> Value then
   begin
     FCorners := Value;
-    UpdateRegion;
+    Invalidate;
+  end;
+end;
+
+procedure TFluiPanel.SetDropShadowEnabled(const Value: Boolean);
+begin
+  if FDropShadowEnabled <> Value then
+  begin
+    FDropShadowEnabled := Value;
+    Realign;
+    Invalidate;
+  end;
+end;
+
+procedure TFluiPanel.SetDropShadowColor(const Value: TColor);
+begin
+  if FDropShadowColor <> Value then
+  begin
+    FDropShadowColor := Value;
+    Invalidate;
+  end;
+end;
+
+procedure TFluiPanel.SetDropShadowBlur(const Value: Integer);
+begin
+  if FDropShadowBlur <> Value then
+  begin
+    FDropShadowBlur := Value;
+    Realign;
+    Invalidate;
+  end;
+end;
+
+procedure TFluiPanel.SetDropShadowOffsetX(const Value: Integer);
+begin
+  if FDropShadowOffsetX <> Value then
+  begin
+    FDropShadowOffsetX := Value;
+    Realign;
+    Invalidate;
+  end;
+end;
+
+procedure TFluiPanel.SetDropShadowOffsetY(const Value: Integer);
+begin
+  if FDropShadowOffsetY <> Value then
+  begin
+    FDropShadowOffsetY := Value;
+    Realign;
+    Invalidate;
+  end;
+end;
+
+procedure TFluiPanel.SetDropShadowAlpha(const Value: Byte);
+begin
+  if FDropShadowAlpha <> Value then
+  begin
+    FDropShadowAlpha := Value;
+    Invalidate;
+  end;
+end;
+
+procedure TFluiPanel.SetInnerShadowEnabled(const Value: Boolean);
+begin
+  if FInnerShadowEnabled <> Value then
+  begin
+    FInnerShadowEnabled := Value;
+    Invalidate;
+  end;
+end;
+
+procedure TFluiPanel.SetInnerShadowColor(const Value: TColor);
+begin
+  if FInnerShadowColor <> Value then
+  begin
+    FInnerShadowColor := Value;
+    Invalidate;
+  end;
+end;
+
+procedure TFluiPanel.SetInnerShadowBlur(const Value: Integer);
+begin
+  if FInnerShadowBlur <> Value then
+  begin
+    FInnerShadowBlur := Value;
+    Invalidate;
+  end;
+end;
+
+procedure TFluiPanel.SetInnerShadowOffsetX(const Value: Integer);
+begin
+  if FInnerShadowOffsetX <> Value then
+  begin
+    FInnerShadowOffsetX := Value;
+    Invalidate;
+  end;
+end;
+
+procedure TFluiPanel.SetInnerShadowOffsetY(const Value: Integer);
+begin
+  if FInnerShadowOffsetY <> Value then
+  begin
+    FInnerShadowOffsetY := Value;
+    Invalidate;
+  end;
+end;
+
+procedure TFluiPanel.SetInnerShadowAlpha(const Value: Byte);
+begin
+  if FInnerShadowAlpha <> Value then
+  begin
+    FInnerShadowAlpha := Value;
+    Invalidate;
+  end;
+end;
+
+procedure TFluiPanel.SetGlassEnabled(const Value: Boolean);
+begin
+  if FGlassEnabled <> Value then
+  begin
+    FGlassEnabled := Value;
+    Invalidate;
+  end;
+end;
+
+procedure TFluiPanel.SetGlassBlurRadius(const Value: Integer);
+begin
+  if FGlassBlurRadius <> Value then
+  begin
+    FGlassBlurRadius := Value;
+    Invalidate;
+  end;
+end;
+
+procedure TFluiPanel.SetGlassColor(const Value: TColor);
+begin
+  if FGlassColor <> Value then
+  begin
+    FGlassColor := Value;
+    Invalidate;
+  end;
+end;
+
+procedure TFluiPanel.SetGlassAlpha(const Value: Byte);
+begin
+  if FGlassAlpha <> Value then
+  begin
+    FGlassAlpha := Value;
     Invalidate;
   end;
 end;
