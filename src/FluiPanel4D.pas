@@ -4,7 +4,7 @@ interface
 
 uses
   System.SysUtils, System.Classes, Vcl.Controls, Vcl.ExtCtrls, Vcl.Graphics,
-  Winapi.Windows, Winapi.GDIPOBJ, Winapi.GDIPAPI, Winapi.Messages;
+  Winapi.Windows, Winapi.GDIPOBJ, Winapi.GDIPAPI, Winapi.Messages, Vcl.Themes;
 
 type
   TFluiGradientDirection = (gdVertical, gdHorizontal, gdForwardDiagonal, gdBackwardDiagonal);
@@ -104,7 +104,6 @@ type
     property Touch;
     property Visible;
     property StyleElements;
-    property StyleName;
     property OnAlignInsertBefore;
     property OnAlignPosition;
     property OnCanResize;
@@ -153,7 +152,10 @@ begin
   FBorderGradientColorStart := clGray;
   FBorderGradientColorEnd := clBlack;
 
-  ControlStyle := ControlStyle + [csAcceptsControls, csOpaque];
+  ControlStyle := ControlStyle + [csAcceptsControls];
+  ControlStyle := ControlStyle - [csOpaque];
+  
+  ParentBackground := True;
   FullRepaint := True;
   DoubleBuffered := True;
   Width := 185;
@@ -183,7 +185,15 @@ procedure TFluiPanel.BuildPath(APath: TGPGraphicsPath; ARect: TGPRectF; ARadius:
 var
   LDiameter: Single;
 begin
+  if ARadius < 0.1 then
+  begin
+    APath.AddRectangle(ARect);
+    Exit;
+  end;
+
   LDiameter := ARadius * 2;
+  if LDiameter > ARect.Width then LDiameter := ARect.Width;
+  if LDiameter > ARect.Height then LDiameter := ARect.Height;
 
   // Top-Left
   if cpTopLeft in FCorners then
@@ -229,13 +239,11 @@ begin
     Exit;
   end;
 
-  if LRound * 2 > Width then LRound := Width / 2;
-  if LRound * 2 > Height then LRound := Height / 2;
-
   LPath := TGPGraphicsPath.Create;
   try
-    // Region inflated for smooth anti-alias edges
-    BuildPath(LPath, MakeRect(-1.0, -1.0, Width + 2.0, Height + 2.0), LRound + 1);
+    // We use a slightly larger path for the region to avoid clipping anti-aliased pixels
+    // but keep it close enough to clip children effectively.
+    BuildPath(LPath, MakeRect(-0.5, -0.5, Width + 1.0, Height + 1.0), LRound + 0.5);
 
     LGraphics := TGPGraphics.Create(Handle);
     try
@@ -260,7 +268,10 @@ end;
 
 procedure TFluiPanel.WMEraseBkgnd(var Message: TWMEraseBkgnd);
 begin
-  Message.Result := 1;
+  if ParentBackground then
+    inherited
+  else
+    Message.Result := 1;
 end;
 
 procedure TFluiPanel.CMTextChanged(var Message: TMessage);
@@ -280,13 +291,21 @@ var
   LOffset: Single;
   LRectF: TGPRectF;
   LGPMode: LinearGradientMode;
+  LClientRect: TRect;
 begin
   if (Width <= 1) or (Height <= 1) then Exit;
+
+  // Ensure parent background is painted for smooth anti-aliased corners
+  if ParentBackground and (Parent <> nil) then
+  begin
+    LClientRect := GetClientRect;
+    StyleServices.DrawParentBackground(Handle, Canvas.Handle, nil, False, @LClientRect);
+  end;
 
   LGraphics := TGPGraphics.Create(Canvas.Handle);
   try
     LGraphics.SetSmoothingMode(SmoothingModeAntiAlias);
-    LGraphics.SetPixelOffsetMode(PixelOffsetModeHighQuality);
+    LGraphics.SetPixelOffsetMode(PixelOffsetModeHalf); // Better for aligned borders
 
     LRound := FRounding;
     if LRound * 2 > Width then LRound := Width / 2;
@@ -297,7 +316,7 @@ begin
 
     LPath := TGPGraphicsPath.Create;
     try
-      if LRound > 0 then
+      if LRound > 0.1 then
         BuildPath(LPath, MakeRect(LOffset, LOffset, Width - FBorderWidth, Height - FBorderWidth), LRound - LOffset)
       else
         LPath.AddRectangle(MakeRect(LOffset, LOffset, Width - FBorderWidth, Height - FBorderWidth));
@@ -325,7 +344,7 @@ begin
       end;
 
       // Border
-      if ((FBorderColor <> clNone) or FEnableBorderGradient) and (FBorderWidth > 0) then
+      if ((FBorderColor <> clNone) or FEnableBorderGradient) and (FBorderWidth > 0.1) then
       begin
         if FEnableBorderGradient then
           LBorderBrush := TGPLinearGradientBrush.Create(LRectF, 
